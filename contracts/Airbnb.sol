@@ -5,17 +5,14 @@ pragma solidity ^0.8.0;
 
 contract AirBNB is Ownable{
     using Counters for Counters.Counter; 
-    Counters.Counter private _tokenIdCounter;
+    Counters.Counter public _tokenIdCounter;
 
     struct PropertyDetails {
         address propertyOwner;
         string details;
         bool isBooked;
         uint PricePerDay;
-        
-
     }
-
 
     struct BookingDetails{
         uint propertyId;
@@ -30,7 +27,7 @@ contract AirBNB is Ownable{
     /// only owner can call this function
     error onlyowner();
 
-    ///property is booked
+    ///property is booked 
     error checkStatus();
 
     ///not having enough ether
@@ -81,7 +78,7 @@ contract AirBNB is Ownable{
 
    
     function addPropety(string memory propertDetails,
-    uint _peicePerDay) external {
+    uint _peicePerDay) public {
         _tokenIdCounter.increment();
         uint count = _tokenIdCounter.current();
         PropertyDetails storage addnewProPerty = PropertyDetailsId[count];
@@ -96,7 +93,7 @@ contract AirBNB is Ownable{
 
     }
 
-    function createBook(uint propertyId,uint duration) external payable isBooked(propertyId){
+    function createBook(uint propertyId,uint duration) public payable isBooked(propertyId){
        PropertyDetails storage property = PropertyDetailsId[propertyId];
        if(msg.value<property.PricePerDay * duration){
            revert insufficientBalance();
@@ -112,12 +109,12 @@ contract AirBNB is Ownable{
        _bookingdetails.duration = duration;
        _bookingdetails.startTimeStamp = block.timestamp;
        _bookingdetails.endTimeStamp = block.timestamp + duration;
-       uint amount  = (address(this).balance * 5)/100;
+       uint amount  = (msg.value * 5)/100;
        (bool success,) = owner().call{value:amount}("");
        if(!success){
           revert failedToTrnasfer();
        }
-       _bookingdetails.bookingAmount = msg.value ;
+       _bookingdetails.bookingAmount = (msg.value * 95)/100;
 
        emit bookProperty(_bookingdetails.propertyId,
        _bookingdetails.customerAddress,
@@ -129,7 +126,7 @@ contract AirBNB is Ownable{
 
     function updatePropertyDetailes (
         uint propertyId,string memory
-        _propertyDetails,uint _pricePerDay) external OnlyOwner( propertyId) isBooked(propertyId){
+        _propertyDetails,uint _pricePerDay) public OnlyOwner( propertyId) isBooked(propertyId){
         PropertyDetails storage updateproperty = PropertyDetailsId[propertyId];
         //updateproperty.propertyOwner = newOwner;
         updateproperty.details = _propertyDetails;
@@ -137,7 +134,7 @@ contract AirBNB is Ownable{
         updateproperty.PricePerDay = _pricePerDay;
     }
 
-    function cancelBooking(address bookingId) external onlycustomerOwner(bookingId){
+    function cancelBooking(address bookingId) public onlycustomerOwner(bookingId){
          BookingDetails storage _bookingdetails = bookingdetails[bookingId];
          PropertyDetails memory _propertyDetails = PropertyDetailsId[_bookingdetails.propertyId];
          uint dutationleft = _bookingdetails.endTimeStamp - _bookingdetails.startTimeStamp;
@@ -163,42 +160,67 @@ contract AirBNB is Ownable{
         }
     }
 
-    // function withdraw() external onlyOwner{
-    //     uint amount  = (address(this).balance * 5)/100;
-    //   (bool success,) = owner().call{value:amount}("");
-    //   if(!success){
-    //       revert failedToTrnasfer();
-    //   }
-    // }
+    
 
-    function delistProperty(uint propertyId) external OnlyOwner(propertyId){
+    function delistProperty(uint propertyId) public OnlyOwner(propertyId){
            delete PropertyDetailsId[propertyId];
     }
 
-    function getListofAllProperty() external returns(PropertyDetails[] memory,uint){
-        uint count = _tokenIdCounter.current();
-        PropertyDetails[] memory property = new PropertyDetails[](count);
-        
-        for(uint i=0;i<_tokenIdCounter.current();i++) {
-             PropertyDetails storage propertylist = PropertyDetailsId[i];
-             property[i] = propertylist;
-        }
 
-        return property,property.length;
-    }
-
-
-    function checkAndreturn(address bookingId) external {
+    function checkAndreturn(address bookingId) public {
         BookingDetails storage bookingDetails = bookingdetails[bookingId];
 
         if (block.timestamp<bookingDetails.endTimeStamp){
             revert();
         }
-          uint amount = bookingDetails.bookingAmount;
+        PropertyDetails storage property = PropertyDetailsId[bookingDetails.propertyId];
+        property.isBooked = false;
+        uint amount = bookingDetails.bookingAmount;
         transfermoneyTopropertyOwner(bookingDetails.propertyId,amount);
         
 
     }
+
+    function get_List_of_all_Property() external view returns(PropertyDetails[] memory,uint){
+        uint count  = _tokenIdCounter.current();
+        uint currentIndex = 0;
+        uint currentId = 0;
+        PropertyDetails[] memory property = new PropertyDetails[](count);  
+        for(uint i=0;i<property.length;i++){
+            currentIndex =i+1;
+            PropertyDetails storage propertyList = PropertyDetailsId[currentIndex];
+            property[currentId] = propertyList;
+            currentId+=1;
+        }
+        return (property,property.length);
+    }
+
+    function get_list_of_rented_property() external view returns(PropertyDetails[] memory,uint){
+        uint count = _tokenIdCounter.current();
+        uint currentIndex = 0;
+        uint currentId = 0;
+        for(uint i = 0;i<count;i++){
+            currentIndex = i+1;
+            if(PropertyDetailsId[currentIndex].isBooked){
+                currentId++;
+            }
+
+        }
+        PropertyDetails[] memory property = new PropertyDetails[](currentId);
+        currentIndex = 0;
+        currentId = 0;
+        for(uint i=0;i<count;i++){
+            currentIndex= i+1;
+            PropertyDetails storage propertyList = PropertyDetailsId[currentIndex];
+            if(propertyList.isBooked){
+            property[currentId] = propertyList;
+            currentId++;
+            }
+        }
+        return (property,property.length);
+    }
+
+    
 
     
 } 
