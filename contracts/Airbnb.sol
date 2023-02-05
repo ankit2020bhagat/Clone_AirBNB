@@ -6,6 +6,7 @@ pragma solidity ^0.8.0;
 contract AirBNB is Ownable{
     using Counters for Counters.Counter; 
     Counters.Counter public _tokenIdCounter;
+    Counters.Counter public IdtoBooking;
 
     struct PropertyDetails {
         address propertyOwner;
@@ -21,7 +22,9 @@ contract AirBNB is Ownable{
         uint startTimeStamp;
         uint endTimeStamp;
         uint bookingAmount;
+        mapping(address => uint) Balance;
     }
+    address counterAddress;
     
 
     /// only owner can call this function
@@ -45,7 +48,7 @@ contract AirBNB is Ownable{
     event bookProperty(
         uint propertyId,address customerAddress,
         uint duration,uint startTimeStamp,uint endTimeStamp,
-        uint amount);
+        uint amount,uint Balance);
     
 
     modifier isBooked(uint propertyId){
@@ -65,7 +68,7 @@ contract AirBNB is Ownable{
     }
 
     modifier onlycustomerOwner(address customerAddress){
-        BookingDetails memory _bookingdetails = bookingdetails[customerAddress];
+        BookingDetails storage _bookingdetails = bookingdetails[customerAddress];
         if(_bookingdetails.customerAddress!=customerAddress){
             revert onlyCustomer();
         }
@@ -74,6 +77,7 @@ contract AirBNB is Ownable{
 
     mapping (address => BookingDetails) public bookingdetails;
     mapping (uint =>PropertyDetails) public PropertyDetailsId;
+    mapping (uint => address) idToBookingAddress;
     
 
    
@@ -93,7 +97,9 @@ contract AirBNB is Ownable{
 
     }
 
-    function createBook(uint propertyId,uint duration) public payable isBooked(propertyId){
+    function BookyourProperty(uint propertyId,uint duration) public payable isBooked(propertyId){
+        IdtoBooking.increment();
+        uint count = IdtoBooking.current();
        PropertyDetails storage property = PropertyDetailsId[propertyId];
        if(msg.value<property.PricePerDay * duration){
            revert insufficientBalance();
@@ -101,7 +107,7 @@ contract AirBNB is Ownable{
        property.isBooked = true;
       
 
-     //  bookedProperty[msg.sender] = PropertyDetailsId[propertyId];
+    
        BookingDetails storage _bookingdetails = bookingdetails[msg.sender];
       
        _bookingdetails.propertyId = propertyId;
@@ -109,28 +115,33 @@ contract AirBNB is Ownable{
        _bookingdetails.duration = duration;
        _bookingdetails.startTimeStamp = block.timestamp;
        _bookingdetails.endTimeStamp = block.timestamp + duration;
+       idToBookingAddress[count] = msg.sender;
+       
        uint amount  = (msg.value * 5)/100;
        (bool success,) = owner().call{value:amount}("");
        if(!success){
           revert failedToTrnasfer();
        }
        _bookingdetails.bookingAmount = (msg.value * 95)/100;
+       _bookingdetails.Balance[PropertyDetailsId[propertyId].propertyOwner] = _bookingdetails.bookingAmount;
+       uint Balance =_bookingdetails.Balance[PropertyDetailsId[propertyId].propertyOwner]; 
 
        emit bookProperty(_bookingdetails.propertyId,
        _bookingdetails.customerAddress,
        _bookingdetails.duration,
        _bookingdetails.startTimeStamp,
        _bookingdetails.endTimeStamp,
-       _bookingdetails.bookingAmount);
+       _bookingdetails.bookingAmount,
+       Balance);
     }
 
     function updatePropertyDetailes (
         uint propertyId,string memory
         _propertyDetails,uint _pricePerDay) public OnlyOwner( propertyId) isBooked(propertyId){
         PropertyDetails storage updateproperty = PropertyDetailsId[propertyId];
-        //updateproperty.propertyOwner = newOwner;
+      
         updateproperty.details = _propertyDetails;
-       // updateproperty.isBooked=_isBooked;
+      
         updateproperty.PricePerDay = _pricePerDay;
     }
 
@@ -146,18 +157,34 @@ contract AirBNB is Ownable{
          delete bookingdetails[bookingId];
     }
 
-    function transfermoneyTopropertyOwner(uint propertyId,uint amount) internal isBooked(propertyId){
-        PropertyDetails storage property = PropertyDetailsId[propertyId];
-        if(property.propertyOwner != msg.sender){
-            revert onlyowner();
+    function transfer_money_To_propertyOwner() external {
+        if(msg.sender != counterAddress){
+            revert();
+        }
+        uint count = IdtoBooking.current();
+        uint currentIndex=0;
+      
+        for(uint i = 0;i<count;i++){
+            currentIndex = 1+i;
+           address bookingAddress = idToBookingAddress[currentIndex];
+           BookingDetails storage _bookingDetails = bookingdetails[bookingAddress];
+           if(block.timestamp > _bookingDetails.endTimeStamp){
+            //    _bookingDetails.isBooked = false;
+               
+               PropertyDetails memory _Propertydetails = PropertyDetailsId[_bookingDetails.propertyId];
+               _Propertydetails.isBooked = false;
+               address propertyOwner = _Propertydetails.propertyOwner;
+               uint amount= _bookingDetails.Balance[propertyOwner];
+               (bool success,) = propertyOwner.call{value:amount}("");
+               if(!success){
+                   revert failedToTrnasfer();
+               } 
+               _bookingDetails.Balance[propertyOwner] = 0;
+
+           }
+
         }
        
-        address PropertyOwner = property.propertyOwner;
-        
-        (bool sucess,) =PropertyOwner.call{value:amount}("");
-        if(!sucess){
-            revert failedToTrnasfer(); 
-        }
     }
 
     
@@ -167,16 +194,22 @@ contract AirBNB is Ownable{
     }
 
 
-    function checkAndreturn(address bookingId) public {
-        BookingDetails storage bookingDetails = bookingdetails[bookingId];
+    function checkAndreturn() public view returns(uint){
+        uint count = IdtoBooking.current();
+        uint currentIndex=0;
+        uint currentId = 0;
+        for(uint i = 0;i<count;i++){
+            currentIndex = 1+i;
+           address bookingAddress = idToBookingAddress[currentIndex];
+           BookingDetails storage bookingDetails = bookingdetails[bookingAddress];
+           if(block.timestamp > bookingDetails.endTimeStamp){
+               currentId++;
+           }
 
-        if (block.timestamp<bookingDetails.endTimeStamp){
-            revert();
         }
-        PropertyDetails storage property = PropertyDetailsId[bookingDetails.propertyId];
-        property.isBooked = false;
-        uint amount = bookingDetails.bookingAmount;
-        transfermoneyTopropertyOwner(bookingDetails.propertyId,amount);
+        return currentId;
+
+        
         
 
     }
@@ -218,6 +251,35 @@ contract AirBNB is Ownable{
             }
         }
         return (property,property.length);
+    }
+
+    function property_available_for_rent() external view returns(PropertyDetails[] memory,uint){
+        uint count = _tokenIdCounter.current();
+        uint currentIndex = 0;
+        uint currentId = 0;
+        for(uint i = 0;i<count;i++){
+            currentIndex = i+1;
+            if(!PropertyDetailsId[currentIndex].isBooked){
+                currentId++;
+            }
+
+        }
+        PropertyDetails[] memory property = new PropertyDetails[](currentId);
+        currentIndex = 0;
+        currentId = 0;
+        for(uint i=0;i<count;i++){
+            currentIndex= i+1;
+            PropertyDetails storage propertyList = PropertyDetailsId[currentIndex];
+            if(!propertyList.isBooked){
+            property[currentId] = propertyList;
+            currentId++;
+            }
+        }
+        return (property,property.length);
+    }
+
+    function setCounterAddress(address _counter) external onlyOwner{
+        counterAddress = _counter;
     }
 
     
